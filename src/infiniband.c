@@ -64,7 +64,7 @@ static int ib_parse_glob_port(char *path, char **device, char **port) {
 static int ib_read_value_file(const char *device, const char *port,
                               const char *filename, int ds_type, value_t *dst) {
   char path[PATH_MAX];
-  if (snprintf(path, PATH_MAX - 1, "/sys/class/infiniband/%s/ports/%s/%s",
+  if (snprintf(path, PATH_MAX, "/sys/class/infiniband/%s/ports/%s/%s",
                device, port, filename) < 0)
     return 1;
   if (parse_value_file(path, dst, ds_type) != 0)
@@ -85,7 +85,7 @@ static int ib_read_value_file_num_only(const char *device, const char *port,
   FILE *fh;
   char buffer[256];
 
-  if (snprintf(path, PATH_MAX - 1, "/sys/class/infiniband/%s/ports/%s/%s",
+  if (snprintf(path, PATH_MAX, "/sys/class/infiniband/%s/ports/%s/%s",
                device, port, filename) < 0)
     return 1;
 
