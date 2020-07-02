@@ -23,6 +23,7 @@
 
 #include "plugin.h"
 #include "utils/common/common.h"
+#include "utils/ignorelist/ignorelist.h"
 
 #if !KERNEL_LINUX
 #error "No applicable input method."
@@ -33,6 +34,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Configuration settings ****************************************************/
+
+static const char *config_keys[] = {
+    "Port",
+    "IgnoreSelected",
+};
+static int config_keys_num = STATIC_ARRAY_SIZE(config_keys);
+static ignorelist_t *ignorelist;
 
 /* Listing ports *************************************************************/
 
@@ -64,8 +74,8 @@ static int ib_parse_glob_port(char *path, char **device, char **port) {
 static int ib_read_value_file(const char *device, const char *port,
                               const char *filename, int ds_type, value_t *dst) {
   char path[PATH_MAX];
-  if (snprintf(path, PATH_MAX, "/sys/class/infiniband/%s/ports/%s/%s",
-               device, port, filename) < 0)
+  if (snprintf(path, PATH_MAX, "/sys/class/infiniband/%s/ports/%s/%s", device,
+               port, filename) < 0)
     return 1;
   if (parse_value_file(path, dst, ds_type) != 0)
     return 1;
@@ -85,8 +95,8 @@ static int ib_read_value_file_num_only(const char *device, const char *port,
   FILE *fh;
   char buffer[256];
 
-  if (snprintf(path, PATH_MAX, "/sys/class/infiniband/%s/ports/%s/%s",
-               device, port, filename) < 0)
+  if (snprintf(path, PATH_MAX, "/sys/class/infiniband/%s/ports/%s/%s", device,
+               port, filename) < 0)
     return 1;
 
   // copied from parse_value_file()
@@ -268,6 +278,23 @@ static int ib_read_port(const char *device, const char *port) {
 
 /* Plugin entrypoints ********************************************************/
 
+static int infiniband_config(const char *key, const char *value) {
+  if (ignorelist == NULL)
+    ignorelist = ignorelist_create(1);
+
+  if (strcasecmp(key, "Port") == 0) {
+    ignorelist_add(ignorelist, value);
+  } else if (strcasecmp(key, "IgnoreSelected") == 0) {
+    int invert = 1;
+    if (IS_TRUE(value))
+      invert = 0;
+    ignorelist_set_invert(ignorelist, invert);
+  } else {
+    return -1;
+  }
+  return 0;
+}
+
 static int infiniband_init(void) {
   glob_t g;
 
@@ -281,12 +308,15 @@ static int infiniband_init(void) {
 static int infiniband_read(void) {
   int rc = 0;
   glob_t g;
+  char port_name[255];
 
   if (ib_glob_ports(&g) == 0) {
     for (int i = 0; i < g.gl_pathc; ++i) {
       char *device = NULL, *port = NULL;
       if (ib_parse_glob_port(g.gl_pathv[i], &device, &port) == 0) {
-        rc &= ib_read_port(device, port);
+        snprintf(port_name, sizeof(port_name), "%s:%s", device, port);
+        if (ignorelist_match(ignorelist, port_name) == 0)
+          rc &= ib_read_port(device, port);
       }
     }
   }
@@ -296,6 +326,8 @@ static int infiniband_read(void) {
 }
 
 void module_register(void) {
+  plugin_register_config("infiniband", infiniband_config, config_keys,
+                         config_keys_num);
   plugin_register_init("infiniband", infiniband_init);
   plugin_register_read("infiniband", infiniband_read);
 }
